@@ -6,18 +6,20 @@ import 'package:student_app_bol/widgets/announcement_card.dart';
 import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:student_app_bol/screens/my_events/my_events_screen.dart';
 
-// StatelessWidget'ı StatefulWidget'a dönüştürüyoruz
 class HomeScreen extends StatefulWidget {
-  // main_scaffold'dan gelen sekme değiştirme fonksiyonunu alabilmek için
-  // bu parametreyi ekliyoruz.
   final Function(int) onNavigate;
-  final String studentName; // Login'den gelen isim
+  final String studentName;
+  final String studentNumber;
+  final int studentDbId;
 
   const HomeScreen({
     super.key,
-    required this.onNavigate, // Constructor'a ekledik
-    required this.studentName, //Constructor'a eklendi
+    required this.onNavigate,
+    required this.studentName,
+    required this.studentNumber,
+    required this.studentDbId,
   });
 
   @override
@@ -25,17 +27,13 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // API'den gelen veriyi tutmak için bir Future tanımlıyoruz
   late Future<List<Map<String, String>>> _announcementsFuture;
 
   @override
   void initState() {
     super.initState();
-    // Sayfa açılırken API'den verileri çek
     _announcementsFuture = _fetchAnnouncements();
   }
-
-  // --- Bu iki fonksiyonu announcements_screen.dart'tan kopyaladım ---
 
   String _createSnippet(String content) {
     if (content.length > 100) {
@@ -68,56 +66,45 @@ class _HomeScreenState extends State<HomeScreen> {
       throw Exception('API\'ye bağlanırken bir hata oluştu: $e');
     }
   }
-  // --- Kopyalanan fonksiyonların sonu ---
-
 
   @override
   Widget build(BuildContext context) {
-    // Ana sayfa artık dikey bir liste
     return ListView(
       padding: const EdgeInsets.all(16.0),
       children: [
-        // 1. Bileşen: Hoş Geldin Kartı
         _buildWelcomeCard(context),
         const SizedBox(height: 24),
 
-        // 2. Bileşen: Hızlı Erişim Başlığı
         Text(
           "Hızlı Erişim",
           style: Theme.of(context).textTheme.headlineSmall,
         ),
         const SizedBox(height: 16),
 
-        // 3. Bileşen: Hızlı Erişim Butonları
         _buildQuickAccessGrid(context),
         const SizedBox(height: 24),
 
-        // 4. Bileşen: Son Duyurular Başlığı
         Text(
           "Son Duyurular",
           style: Theme.of(context).textTheme.headlineSmall,
         ),
         const SizedBox(height: 16),
 
-        // 5. Bileşen: API'den Gelen Duyurular
         _buildAnnouncementsList(),
       ],
     );
   }
 
-
-  // Hoş geldin kartını oluşturan fonksiyon
   Widget _buildWelcomeCard(BuildContext context) {
     return Card(
       color: ankaraUniversityBlue,
-      elevation: 4, // Daha belirgin
+      elevation: 4,
       child: Padding(
         padding: const EdgeInsets.all(20.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              //"Merhaba" -> "Merhaba, [İsim]" ---
               "Merhaba, ${widget.studentName}",
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                 color: Colors.white,
@@ -138,15 +125,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Hızlı erişim butonlarını oluşturan fonksiyon
   Widget _buildQuickAccessGrid(BuildContext context) {
-    // Butonlar için yardımcı bir fonksiyon
     Widget buildQuickButton({required IconData icon, required String label, required VoidCallback onTap}) {
       return InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Card(
-          elevation: 2, // Hafif bir gölge
+          elevation: 2,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -164,15 +149,14 @@ class _HomeScreenState extends State<HomeScreen> {
       crossAxisCount: 2,
       crossAxisSpacing: 16,
       mainAxisSpacing: 16,
-      shrinkWrap: true, // ListView içinde GridView kullanmak için
-      physics: const NeverScrollableScrollPhysics(), // Kaydırmayı engelle
-      childAspectRatio: 1.5, // Butonların en-boy oranı
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      childAspectRatio: 1.5,
       children: [
         buildQuickButton(
           icon: Icons.calendar_today,
           label: "Ders Programı",
           onTap: () {
-            //1 numaralı (Ders Programı) sekmeye yönlendir ---
             widget.onNavigate(1);
           },
         ),
@@ -180,27 +164,62 @@ class _HomeScreenState extends State<HomeScreen> {
           icon: Icons.celebration,
           label: "Etkinlikler",
           onTap: () {
-            // 2 numaralı (Etkinlikler) sekmeye yönlendir ---
             widget.onNavigate(2);
           },
         ),
         buildQuickButton(
-          icon: Icons.school,
-          label: "Notlarım", // Yeni bir özellik fikri
+          icon: Icons.event_available,
+          label: "Etkinliklerim",
           onTap: () {
-            // İleride eklenebilir
-            ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Notlarım özelliği yakında eklenecek.'))
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => MyEventsScreen(
+                  studentDbId: widget.studentDbId,
+                  studentNumber: widget.studentNumber,
+                ),
+              ),
             );
           },
         ),
+        // --- YENİ EKLENDİ: Profilim Butonu ---
+        // Boş durmasın diye buraya öğrenci bilgilerini gösteren bir buton ekledik.
         buildQuickButton(
-          icon: Icons.restaurant_menu,
-          label: "Yemekhane", // Yeni bir özellik fikri
+          icon: Icons.person,
+          label: "Profilim",
           onTap: () {
-            // İleride eklenebilir
-            ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Yemekhane özelliği yakında eklenecek.'))
+            showDialog(
+              context: context,
+              builder: (BuildContext context) {
+                return AlertDialog(
+                  title: Row(
+                    children: [
+                      Icon(Icons.badge, color: ankaraUniversityBlue),
+                      const SizedBox(width: 8),
+                      const Text("Öğrenci Bilgileri"),
+                    ],
+                  ),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildProfileInfo("Ad Soyad", widget.studentName),
+                      const SizedBox(height: 8),
+                      _buildProfileInfo("Öğrenci No", widget.studentNumber),
+                      const SizedBox(height: 8),
+                      _buildProfileInfo("Sistem ID", widget.studentDbId.toString()),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      child: const Text("Kapat"),
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                      },
+                    ),
+                  ],
+                );
+              },
             );
           },
         ),
@@ -208,7 +227,19 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // API'den gelen duyuruları listeleyen FutureBuilder
+  // Profil penceresi için yardımcı widget
+  Widget _buildProfileInfo(String label, String value) {
+    return RichText(
+      text: TextSpan(
+        style: const TextStyle(fontSize: 16, color: Colors.black),
+        children: [
+          TextSpan(text: "$label: ", style: const TextStyle(fontWeight: FontWeight.bold)),
+          TextSpan(text: value),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAnnouncementsList() {
     return FutureBuilder<List<Map<String, String>>>(
       future: _announcementsFuture,
@@ -226,15 +257,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
         if (snapshot.hasData) {
           final allAnnouncements = snapshot.data!;
-          // Ana sayfada sadece en son 3 duyuruyu alıyoruz
           final recentAnnouncements = allAnnouncements.take(3).toList();
 
           if (recentAnnouncements.isEmpty) {
             return const Center(child: Text("Gösterilecek duyuru bulunamadı."));
           }
 
-          // ListView içinde bir başka ListView.builder KULLANILMAZ.
-          // Bu yüzden shrinkWrap ve physics ayarları yapıyoruz.
           return ListView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),

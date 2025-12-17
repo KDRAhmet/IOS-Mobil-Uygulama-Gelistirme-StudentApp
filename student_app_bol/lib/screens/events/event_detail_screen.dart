@@ -8,9 +8,6 @@ import 'dart:convert'; // JSON işlemleri için
 // StatelessWidget'ı StatefulWidget'a dönüştürüyoruz
 class EventDetailScreen extends StatefulWidget {
   final Event event; // 'events_screen.dart' dosyasından gelen Event nesnesi
-
-  // Login'den gelen ve EventsScreen'den iletilen
-  // öğrenci veritabanı ID'si VE numarası
   final int studentDbId;
   final String studentNumber;
 
@@ -18,7 +15,7 @@ class EventDetailScreen extends StatefulWidget {
     super.key,
     required this.event,
     required this.studentDbId,
-    required this.studentNumber, // <-- YENİ EKLENDİ
+    required this.studentNumber,
   });
 
   @override
@@ -26,11 +23,47 @@ class EventDetailScreen extends StatefulWidget {
 }
 
 class _EventDetailScreenState extends State<EventDetailScreen> {
-  bool _isLoading = false;
-  bool _isJoined = false;
+  bool _isLoading = false; // Buton işlemde mi?
+  bool _isCheckingStatus = true; // Sayfa ilk açıldığında kontrol ediliyor mu?
+  bool _isJoined = false; // Kullanıcı katılmış mı?
   String _errorMessage = '';
 
-  //Etkinliğe katılmak için API'ye POST isteği ---
+  @override
+  void initState() {
+    super.initState();
+    // Sayfa açılır açılmaz katılım durumunu kontrol et
+    _checkRegistrationStatus();
+  }
+
+  // --- YENİ FONKSİYON: Katılım durumunu kontrol et ---
+  Future<void> _checkRegistrationStatus() async {
+    // API Adresi: .../api/EventsApi/isRegistered?studentId=15&eventId=5
+    // Bu endpoint'in Web API'de (EventsApiController.cs) tanımlı olması gerekir.
+    final String apiUrl = "https://10.0.2.2:7072/api/EventsApi/isRegistered?studentId=${widget.studentDbId}&eventId=${widget.event.id}";
+
+    try {
+      final response = await http.get(Uri.parse(apiUrl))
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        // API 'true' veya 'false' döndürür
+        setState(() {
+          _isJoined = json.decode(response.body) as bool;
+        });
+      }
+    } catch (e) {
+      // Hata olursa sessizce geçebiliriz veya loglayabiliriz,
+      // varsayılan olarak _isJoined = false kalır.
+      print("Durum kontrolü hatası: $e");
+    } finally {
+      // Kontrol bitti, yükleniyor ekranını kaldır
+      setState(() {
+        _isCheckingStatus = false;
+      });
+    }
+  }
+
+  // --- MEVCUT FONKSİYON: Etkinliğe katıl ---
   Future<void> _joinEvent() async {
     setState(() {
       _isLoading = true;
@@ -39,15 +72,10 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
 
     final String apiUrl = "https://10.0.2.2:7072/api/EventsApi/join/${widget.event.id}";
 
-    //API'ye 'studentNumber' gönderiyoruz ---
-    // Web API'ne öğrenci numarasını JSON body içinde gönderiyoruz
     final body = json.encode({
-      'studentNumber': widget.studentNumber, // 'studentId' yerine 'studentNumber'
+      'studentNumber': widget.studentNumber,
       'eventId': widget.event.id
     });
-
-    // [HttpPost("join/{eventId}")] fonksiyonunun [FromBody] ile
-    // bir 'studentNumber' beklediğinden emin ol.
 
     try {
       final response = await http.post(
@@ -61,12 +89,23 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         setState(() {
           _isJoined = true;
         });
+
+        // Başarı mesajı göster
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Etkinliğe başarıyla kayıt oldunuz!'), backgroundColor: Colors.green),
+          );
+        }
+      } else if (response.statusCode == 409) {
+        // Zaten kayıtlıysa (API Conflict dönerse)
+        setState(() {
+          _isJoined = true;
+          _errorMessage = "Zaten kayıtlısınız.";
+        });
       } else {
-        // API'den hata döndü (405, 400, 500 vb.)
         throw Exception('Katılma işlemi başarısız. Hata Kodu: ${response.statusCode}');
       }
     } catch (e) {
-      // Bağlantı hatası veya zaman aşımı
       setState(() {
         _errorMessage = 'Bir hata oluştu: $e';
       });
@@ -134,9 +173,13 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                 style: Theme.of(buildContext).textTheme.bodyMedium?.copyWith(fontSize: 16, height: 1.5),
               ),
 
-              // --- Dinamik "Katıl" Butonu ---
+              // --- DEĞİŞİKLİK: Akıllı Buton ---
               const SizedBox(height: 32.0),
-              SizedBox(
+
+              // Eğer sayfa ilk açıldığında kontrol yapılıyorsa küçük bir yükleniyor göster
+              _isCheckingStatus
+                  ? const Center(child: CircularProgressIndicator())
+                  : SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   icon: _isLoading
@@ -149,21 +192,29 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                       strokeWidth: 3,
                     ),
                   )
-                      : Icon(_isJoined ? Icons.check_circle : Icons.check_circle_outline),
+                      : Icon(_isJoined ? Icons.check_circle : Icons.person_add), // İkon değişti
 
+                  // Metin duruma göre değişiyor
                   label: Text(
-                      _isLoading ? "KATILINIYOR..." : (_isJoined ? "KATILDIN!" : "ETKİNLİĞE KATIL")
+                      _isLoading
+                          ? "İŞLENİYOR..."
+                          : (_isJoined ? "KATILDINIZ" : "ETKİNLİĞE KATIL")
                   ),
 
                   style: ElevatedButton.styleFrom(
                     foregroundColor: Colors.white,
-                    backgroundColor: _isJoined ? Colors.green[600] : ankaraUniversityBlue,
-                    disabledBackgroundColor: _isJoined ? Colors.green[600] : Colors.grey,
+                    // Katıldıysa yeşil ve pasif görünümlü, değilse mavi
+                    backgroundColor: _isJoined ? Colors.green[700] : ankaraUniversityBlue,
+                    // Devre dışı rengi de aynı olsun ki basılamasa da güzel görünsün
+                    disabledBackgroundColor: _isJoined ? Colors.green[700] : Colors.grey,
+                    disabledForegroundColor: Colors.white,
                   ),
 
+                  // Eğer yükleniyorsa veya zaten katılmışsa butona basılmasın
                   onPressed: (_isLoading || _isJoined) ? null : _joinEvent,
                 ),
               ),
+              // --- DEĞİŞİKLİK SONU ---
 
               // Hata mesajı (eğer varsa)
               if (_errorMessage.isNotEmpty)

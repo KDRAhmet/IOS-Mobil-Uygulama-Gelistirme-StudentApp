@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+// Kendi proje yolumuzu (student_app_bol) kullanalım
 import 'package:student_app_bol/screens/main_scaffold/main_scaffold.dart';
 import 'package:student_app_bol/theme/app_theme.dart';
 import 'dart:async'; // Asenkron işlemler için
@@ -28,62 +29,101 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _performLogin() async {
-    final String studentNumberInput = _studentIdController.text;
+    final String studentNumberInput = _studentIdController.text.trim();
+    final String passwordInput = _passwordController.text.trim();
 
-    if (studentNumberInput.isEmpty) {
+    if (studentNumberInput.isEmpty || passwordInput.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Lütfen öğrenci numaranızı girin.'), backgroundColor: Colors.red),
+        const SnackBar(content: Text('Lütfen öğrenci numarası ve şifrenizi girin.'), backgroundColor: Colors.red),
       );
       return;
     }
 
     setState(() { _isLoading = true; });
 
-    const String apiUrl = "https://10.0.2.2:7072/api/StudentsApi";
+    // API adresin (StudentAuthApi)
+    const String apiUrl = "https://10.0.2.2:7072/api/StudentAuthApi/login";
 
     try {
-      final response = await http.get(Uri.parse(apiUrl))
-          .timeout(const Duration(seconds: 10));
+      final response = await http.post(
+        Uri.parse(apiUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'studentNumber': studentNumberInput,
+          'password': passwordInput,
+        }),
+      ).timeout(const Duration(seconds: 10));
+
+      // DEBUG İÇİN: API yanıtını konsola yazdır
+      print("API Yanıt Kodu: ${response.statusCode}");
+      print("API Yanıt Body: ${response.body}");
 
       if (response.statusCode == 200) {
-        List<dynamic> students = json.decode(response.body);
+        // --- BAŞARILI GİRİŞ ---
+        final data = json.decode(response.body);
 
-        var foundStudent = students.firstWhere(
-              (student) => student['studentNumber'] == studentNumberInput,
-          orElse: () => null,
-        );
+        // --- HATA DÜZELTMESİ (Gelişmiş) ---
+        // API'den gelen veriyi daha güvenli bir şekilde çekmeye çalışıyoruz.
+        // Hata mesajına göre API 'studentId' gönderiyor.
+        int studentDbId = 0;
+        if (data['id'] != null) {
+          studentDbId = int.tryParse(data['id'].toString()) ?? 0;
+        } else if (data['Id'] != null) {
+          studentDbId = int.tryParse(data['Id'].toString()) ?? 0;
+        } else if (data['studentId'] != null) { // <-- API yanıtına göre eklendi
+          studentDbId = int.tryParse(data['studentId'].toString()) ?? 0;
+        }
 
-        if (foundStudent != null) {
-          final int studentDbId = foundStudent['id'];
-          final String studentName = foundStudent['fullName'];
+        // İsim alanını kontrol et ('fullname' küçük harfle geliyor olabilir)
+        String studentName = "Öğrenci";
+        if (data['fullName'] != null) {
+          studentName = data['fullName'];
+        } else if (data['FullName'] != null) {
+          studentName = data['FullName'];
+        } else if (data['fullname'] != null) { // <-- API yanıtına göre eklendi
+          studentName = data['fullname'];
+        }
 
-          // Ana ekrana yönlendir ve ID'yi (ve ismi) ilet
+        // Öğrenci numarası
+        String studentNumber = studentNumberInput;
+        if (data['studentNumber'] != null) {
+          studentNumber = data['studentNumber'];
+        }
+
+        if (studentDbId == 0) {
+          // ID hala 0 ise API farklı bir yapı dönüyor demektir.
+          // Hata mesajında API yanıtını göster ki sorunu anlayabilelim.
+          throw Exception("Öğrenci ID'si alınamadı. API yanıtı: ${response.body}");
+        }
+
+        if (mounted) {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
               builder: (context) => MainScaffold(
                 studentDbId: studentDbId,
                 studentName: studentName,
-                // Öğrenci numarasını da iletiyoruz ---
-                studentNumber: studentNumberInput,
+                studentNumber: studentNumber,
               ),
             ),
           );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Öğrenci numarası bulunamadı.'), backgroundColor: Colors.red),
-          );
         }
-
+      } else if (response.statusCode == 401) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Öğrenci numarası veya şifre hatalı.'), backgroundColor: Colors.red),
+        );
       } else {
-        throw Exception('API\'den öğrenci listesi alınamadı. Hata Kodu: ${response.statusCode}');
+        throw Exception('Giriş yapılamadı. Hata Kodu: ${response.statusCode}. Mesaj: ${response.body}');
       }
     } catch (e) {
+      print("Giriş Hatası Detayı: $e"); // Hatayı konsola da yazdır
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Giriş başarısız: $e'), backgroundColor: Colors.red),
+        SnackBar(content: Text('Hata: $e'), backgroundColor: Colors.red),
       );
     } finally {
-      setState(() { _isLoading = false; });
+      if (mounted) {
+        setState(() { _isLoading = false; });
+      }
     }
   }
 
